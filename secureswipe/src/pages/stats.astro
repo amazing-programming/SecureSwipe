@@ -1,0 +1,683 @@
+---
+// stats.astro - Página de estadísticas del usuario
+import MainLayout from '../layouts/MainLayout.astro';
+
+// Título y descripción para SEO
+const title = 'Estadísticas | SecureSwipe';
+const description = 'Visualiza tu progreso y estadísticas de aprendizaje en SecureSwipe.';
+---
+
+<MainLayout title={title} description={description}>
+  <div class="stats-container">
+    <header class="stats-header">
+      <h1>Tus Estadísticas</h1>
+      <p>Visualiza tu progreso en el aprendizaje de seguridad informática</p>
+    </header>
+    
+    <div class="stats-content">
+      <div class="stats-overview">
+        <div class="stat-card">
+          <h3>Progreso General</h3>
+          <div class="progress-circle">
+            <svg width="120" height="120" viewBox="0 0 120 120">
+              <circle cx="60" cy="60" r="54" fill="none" stroke="#e6e6e6" stroke-width="12" />
+              <circle id="progress-circle" cx="60" cy="60" r="54" fill="none" stroke="#3498db" stroke-width="12" 
+                stroke-dasharray="339.292" stroke-dashoffset="339.292" />
+            </svg>
+            <div class="progress-text">
+              <span id="progress-percentage">0%</span>
+            </div>
+          </div>
+          <p>Tarjetas completadas: <span id="cards-completed">0</span>/<span id="total-cards">0</span></p>
+        </div>
+        
+        <div class="stat-card">
+          <h3>Precisión</h3>
+          <div class="accuracy-value">
+            <span id="accuracy-percentage">0%</span>
+          </div>
+          <div class="accuracy-bars">
+            <div class="accuracy-bar">
+              <div class="bar-label">Vulnerabilidades</div>
+              <div class="bar-container">
+                <div id="vulnerability-bar" class="bar" style="width: 0%;"></div>
+              </div>
+              <div id="vulnerability-accuracy" class="bar-value">0%</div>
+            </div>
+            <div class="accuracy-bar">
+              <div class="bar-label">Buenas Prácticas</div>
+              <div class="bar-container">
+                <div id="good-practice-bar" class="bar" style="width: 0%;"></div>
+              </div>
+              <div id="good-practice-accuracy" class="bar-value">0%</div>
+            </div>
+          </div>
+        </div>
+        
+        <div class="stat-card">
+          <h3>Categorías</h3>
+          <div class="category-chart" id="category-chart">
+            <!-- El gráfico de categorías se generará con JavaScript -->
+          </div>
+        </div>
+      </div>
+      
+      <div class="stats-details">
+        <h3>Historial de Desafíos</h3>
+        <div class="challenge-history">
+          <table id="challenge-table">
+            <thead>
+              <tr>
+                <th>Fecha</th>
+                <th>Dificultad</th>
+                <th>Categoría</th>
+                <th>Puntuación</th>
+                <th>Precisión</th>
+              </tr>
+            </thead>
+            <tbody>
+              <!-- Se llenará dinámicamente -->
+            </tbody>
+          </table>
+          <div id="no-challenges" class="empty-state">
+            <p>Aún no has completado ningún desafío</p>
+            <a href="/challenge" class="button primary-button">Iniciar un Desafío</a>
+          </div>
+        </div>
+        
+        <h3>Racha de Cartas Diarias</h3>
+        <div class="streak-container">
+          <div class="streak-display">
+            <div class="streak-number">
+              <span id="current-streak">0</span>
+              <span class="streak-label">días</span>
+            </div>
+            <div class="streak-text">Racha actual</div>
+          </div>
+          
+          <div class="streak-display">
+            <div class="streak-number">
+              <span id="max-streak">0</span>
+              <span class="streak-label">días</span>
+            </div>
+            <div class="streak-text">Mejor racha</div>
+          </div>
+          
+          <div class="calendar-view" id="calendar-container">
+            <!-- El calendario se generará con JavaScript -->
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</MainLayout>
+
+<script>
+  // Importación de servicios
+  import { CardService } from '../services/cardService.js';
+  import { StorageService } from '../services/storageService.js';
+  
+  // Inicialización de servicios
+  const cardService = new CardService();
+  const storageService = new StorageService();
+  
+  // Elementos DOM
+  const progressCircle = document.getElementById('progress-circle');
+  const progressPercentage = document.getElementById('progress-percentage');
+  const cardsCompleted = document.getElementById('cards-completed');
+  const totalCards = document.getElementById('total-cards');
+  const accuracyPercentage = document.getElementById('accuracy-percentage');
+  const vulnerabilityBar = document.getElementById('vulnerability-bar');
+  const vulnerabilityAccuracy = document.getElementById('vulnerability-accuracy');
+  const goodPracticeBar = document.getElementById('good-practice-bar');
+  const goodPracticeAccuracy = document.getElementById('good-practice-accuracy');
+  const categoryChart = document.getElementById('category-chart');
+  const challengeTable = document.getElementById('challenge-table');
+  const noChallengresElement = document.getElementById('no-challenges');
+  const currentStreakElement = document.getElementById('current-streak');
+  const maxStreakElement = document.getElementById('max-streak');
+  const calendarContainer = document.getElementById('calendar-container');
+  
+  // Inicialización
+  async function init() {
+    await cardService.loadCards();
+    loadStats();
+    loadChallengeHistory();
+    loadDailyStreak();
+  }
+  
+  // Carga las estadísticas generales
+  async function loadStats() {
+    const allCards = await cardService.getAllCards();
+    const progress = storageService.getProgress();
+    
+    if (!allCards || !progress) {
+      return;
+    }
+    
+    // Calcular progreso general
+    const totalCardsCount = allCards.length;
+    const completedCards = progress.cardsViewed.length;
+    const progressPercent = totalCardsCount > 0 ? Math.round((completedCards / totalCardsCount) * 100) : 0;
+    
+    // Actualizar círculo de progreso
+    const circumference = 2 * Math.PI * 54; // 2πr
+    const dashOffset = circumference - (progressPercent / 100) * circumference;
+    progressCircle.style.strokeDasharray = circumference;
+    progressCircle.style.strokeDashoffset = dashOffset;
+    
+    // Actualizar texto de progreso
+    progressPercentage.textContent = `${progressPercent}%`;
+    cardsCompleted.textContent = completedCards;
+    totalCards.textContent = totalCardsCount;
+    
+    // Calcular precisión
+    const correctAnswers = progress.correctAnswers.length;
+    const totalAnswers = correctAnswers + progress.incorrectAnswers.length;
+    const accuracyValue = totalAnswers > 0 ? Math.round((correctAnswers / totalAnswers) * 100) : 0;
+    
+    // Actualizar texto de precisión
+    accuracyPercentage.textContent = `${accuracyValue}%`;
+    
+    // Calcular precisión por tipo de tarjeta
+    const vulnerabilities = allCards.filter(card => card.type === 'vulnerability');
+    const goodPractices = allCards.filter(card => card.type === 'good_practice');
+    
+    // Vulnerabilidades identificadas correctamente
+    const vulnerabilityIds = vulnerabilities.map(card => card.id);
+    const correctVulnerabilities = progress.correctAnswers.filter(id => vulnerabilityIds.includes(id));
+    const totalVulnerabilitiesAnswered = vulnerabilityIds.filter(id => 
+      progress.correctAnswers.includes(id) || progress.incorrectAnswers.includes(id)
+    ).length;
+    
+    const vulnerabilityAccuracyValue = totalVulnerabilitiesAnswered > 0 
+      ? Math.round((correctVulnerabilities.length / totalVulnerabilitiesAnswered) * 100) 
+      : 0;
+    
+    // Buenas prácticas identificadas correctamente
+    const goodPracticeIds = goodPractices.map(card => card.id);
+    const correctGoodPractices = progress.correctAnswers.filter(id => goodPracticeIds.includes(id));
+    const totalGoodPracticesAnswered = goodPracticeIds.filter(id => 
+      progress.correctAnswers.includes(id) || progress.incorrectAnswers.includes(id)
+    ).length;
+    
+    const goodPracticeAccuracyValue = totalGoodPracticesAnswered > 0 
+      ? Math.round((correctGoodPractices.length / totalGoodPracticesAnswered) * 100) 
+      : 0;
+    
+    // Actualizar barras de precisión
+    vulnerabilityBar.style.width = `${vulnerabilityAccuracyValue}%`;
+    vulnerabilityAccuracy.textContent = `${vulnerabilityAccuracyValue}%`;
+    
+    goodPracticeBar.style.width = `${goodPracticeAccuracyValue}%`;
+    goodPracticeAccuracy.textContent = `${goodPracticeAccuracyValue}%`;
+    
+    // Generar gráfico de categorías
+    generateCategoryChart(allCards, progress);
+  }
+  
+  // Genera el gráfico de categorías
+  async function generateCategoryChart(allCards, progress) {
+    const categories = await cardService.getCategories();
+    
+    if (!categories || categories.length === 0) {
+      return;
+    }
+    
+    // Limpiar contenedor
+    categoryChart.innerHTML = '';
+    
+    // Para cada categoría, calcular el progreso
+    categories.forEach(category => {
+      const categoryCards = allCards.filter(card => card.category === category.id);
+      const completedCategoryCards = categoryCards.filter(card => progress.cardsViewed.includes(card.id));
+      const categoryProgressPercent = categoryCards.length > 0 
+        ? Math.round((completedCategoryCards.length / categoryCards.length) * 100)
+        : 0;
+      
+      // Crear elemento de categoría
+      const categoryElement = document.createElement('div');
+      categoryElement.className = 'category-item';
+      
+      categoryElement.innerHTML = `
+        <div class="category-name">${category.name}</div>
+        <div class="category-progress-container">
+          <div class="category-progress-bar" style="width: ${categoryProgressPercent}%"></div>
+        </div>
+        <div class="category-progress-value">${categoryProgressPercent}%</div>
+      `;
+      
+      categoryChart.appendChild(categoryElement);
+    });
+  }
+  
+  // Carga el historial de desafíos
+  function loadChallengeHistory() {
+    const progress = storageService.getProgress();
+    
+    if (!progress || !progress.challenges || progress.challenges.length === 0) {
+      challengeTable.style.display = 'none';
+      noChallengresElement.style.display = 'block';
+      return;
+    }
+    
+    // Mostrar tabla y ocultar mensaje vacío
+    challengeTable.style.display = 'table';
+    noChallengresElement.style.display = 'none';
+    
+    // Limpiar tabla
+    const tbody = challengeTable.querySelector('tbody');
+    tbody.innerHTML = '';
+    
+    // Ordenar desafíos por fecha (más recientes primero)
+    const sortedChallenges = progress.challenges.sort((a, b) => 
+      new Date(b.date) - new Date(a.date)
+    );
+    
+    // Agregar filas a la tabla
+    sortedChallenges.forEach(challenge => {
+      const date = new Date(challenge.date);
+      const formattedDate = date.toLocaleDateString();
+      
+      // Calcular precisión
+      const accuracy = challenge.totalCards > 0 
+        ? Math.round((challenge.correctAnswers / challenge.totalCards) * 100)
+        : 0;
+      
+      // Obtener nombre de dificultad
+      let difficultyName = 'Desconocida';
+      switch(challenge.difficulty) {
+        case 1: difficultyName = 'Fácil'; break;
+        case 2: difficultyName = 'Media'; break;
+        case 3: difficultyName = 'Difícil'; break;
+      }
+      
+      // Obtener nombre de categoría o "Todas"
+      let categoryName = 'Todas';
+      if (challenge.category) {
+        cardService.getCategories().then(categories => {
+          const category = categories.find(c => c.id === challenge.category);
+          if (category) {
+            categoryName = category.name;
+          }
+        });
+      }
+      
+      // Crear fila
+      const row = document.createElement('tr');
+      row.innerHTML = `
+        <td>${formattedDate}</td>
+        <td>${difficultyName}</td>
+        <td>${categoryName}</td>
+        <td>${challenge.score}</td>
+        <td>${accuracy}%</td>
+      `;
+      
+      tbody.appendChild(row);
+    });
+  }
+  
+  // Carga la información de racha diaria
+  function loadDailyStreak() {
+    const progress = storageService.getProgress();
+    
+    if (!progress || !progress.dailyCards || !progress.dailyCards.completed) {
+      return;
+    }
+    
+    // Calcular racha actual
+    const today = new Date().toISOString().split('T')[0];
+    const yesterday = new Date(Date.now() - 86400000).toISOString().split('T')[0];
+    
+    let currentStreak = 0;
+    
+    // Si completó la tarjeta hoy, comenzar en 1
+    if (progress.dailyCards.completed.includes(today)) {
+      currentStreak = 1;
+      
+      // Verificar días consecutivos anteriores
+      let checkDate = yesterday;
+      let consecutive = true;
+      
+      while (consecutive) {
+        // Convertir fechas a objetos Date para comparación
+        const checkDateObj = new Date(checkDate);
+        
+        // Verificar si esta fecha está en completados
+        const isCompleted = progress.dailyCards.completed.some(date => {
+          const completedDate = new Date(date);
+          return (
+            completedDate.getFullYear() === checkDateObj.getFullYear() &&
+            completedDate.getMonth() === checkDateObj.getMonth() &&
+            completedDate.getDate() === checkDateObj.getDate()
+          );
+        });
+        
+        if (isCompleted) {
+          currentStreak++;
+          // Mover al día anterior
+          checkDateObj.setDate(checkDateObj.getDate() - 1);
+          checkDate = checkDateObj.toISOString().split('T')[0];
+        } else {
+          consecutive = false;
+        }
+      }
+    }
+    
+    // Calcular mejor racha (implementación simplificada)
+    const maxStreak = Math.max(currentStreak, progress.dailyCards.maxStreak || 0);
+    
+    // Actualizar valores en UI
+    currentStreakElement.textContent = currentStreak;
+    maxStreakElement.textContent = maxStreak;
+    
+    // Actualizar máxima racha en storage si es necesario
+    if (maxStreak > (progress.dailyCards.maxStreak || 0)) {
+      progress.dailyCards.maxStreak = maxStreak;
+      storageService.setProgress(progress);
+    }
+    
+    // Generar visualización de calendario
+    generateCalendarView(progress.dailyCards.completed);
+  }
+  
+  // Genera una visualización simple del calendario de los últimos 30 días
+  function generateCalendarView(completedDates) {
+    // Limpiar contenedor
+    calendarContainer.innerHTML = '';
+    
+    // Generar 30 días hacia atrás
+    const today = new Date();
+    for (let i = 29; i >= 0; i--) {
+      const date = new Date(today);
+      date.setDate(date.getDate() - i);
+      const dateStr = date.toISOString().split('T')[0];
+      
+      // Verificar si esta fecha está completada
+      const isCompleted = completedDates.includes(dateStr);
+      
+      // Crear elemento de día
+      const dayElement = document.createElement('div');
+      dayElement.className = `calendar-day ${isCompleted ? 'completed' : ''}`;
+      
+      // Agregar tooltip con fecha
+      const formattedDate = date.toLocaleDateString();
+      dayElement.title = formattedDate;
+      
+      calendarContainer.appendChild(dayElement);
+    }
+  }
+  
+  // Iniciar
+  init();
+</script>
+
+<style>
+  .stats-container {
+    max-width: 1000px;
+    margin: 0 auto;
+    padding: 1rem;
+  }
+  
+  .stats-header {
+    text-align: center;
+    margin-bottom: 2rem;
+  }
+  
+  .stats-header h1 {
+    font-size: 2.5rem;
+    margin-bottom: 0.5rem;
+  }
+  
+  .stats-content {
+    display: grid;
+    gap: 2rem;
+  }
+  
+  @media (min-width: 768px) {
+    .stats-content {
+      grid-template-columns: 1fr 1fr;
+    }
+  }
+  
+  .stats-overview {
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+  }
+  
+  .stat-card {
+    background-color: var(--color-bg);
+    border-radius: 0.5rem;
+    padding: 1.5rem;
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
+  }
+  
+  .stat-card h3 {
+    margin-top: 0;
+    margin-bottom: 1rem;
+    font-size: 1.25rem;
+    color: var(--color-primary);
+  }
+  
+  /* Estilos para el círculo de progreso */
+  .progress-circle {
+    position: relative;
+    width: 120px;
+    height: 120px;
+    margin: 0 auto 1rem;
+  }
+  
+  .progress-circle svg {
+    transform: rotate(-90deg);
+  }
+  
+  #progress-circle {
+    transition: stroke-dashoffset 0.5s ease-in-out;
+  }
+  
+  .progress-text {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    font-size: 1.5rem;
+    font-weight: bold;
+    color: var(--color-primary);
+  }
+  
+  /* Estilos para la precisión */
+  .accuracy-value {
+    text-align: center;
+    font-size: 2rem;
+    font-weight: bold;
+    color: var(--color-primary);
+    margin-bottom: 1rem;
+  }
+  
+  .accuracy-bars {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+  }
+  
+  .accuracy-bar {
+    display: grid;
+    grid-template-columns: 1fr 2fr 0.5fr;
+    align-items: center;
+    gap: 0.5rem;
+  }
+  
+  .bar-container {
+    height: 10px;
+    background-color: #e6e6e6;
+    border-radius: 5px;
+    overflow: hidden;
+  }
+  
+  .bar {
+    height: 100%;
+    background-color: var(--color-primary);
+    border-radius: 5px;
+    transition: width 0.5s ease-in-out;
+  }
+  
+  .bar-value {
+    font-size: 0.875rem;
+    font-weight: bold;
+  }
+  
+  /* Estilos para el gráfico de categorías */
+  .category-chart {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+  }
+  
+  .category-item {
+    display: grid;
+    grid-template-columns: 1fr 2fr 0.5fr;
+    align-items: center;
+    gap: 0.5rem;
+  }
+  
+  .category-progress-container {
+    height: 8px;
+    background-color: #e6e6e6;
+    border-radius: 4px;
+    overflow: hidden;
+  }
+  
+  .category-progress-bar {
+    height: 100%;
+    background-color: var(--color-primary);
+    border-radius: 4px;
+    transition: width 0.5s ease-in-out;
+  }
+  
+  .category-progress-value {
+    font-size: 0.875rem;
+    font-weight: bold;
+  }
+  
+  /* Estilos para el historial de desafíos */
+  .stats-details {
+    display: flex;
+    flex-direction: column;
+    gap: 2rem;
+  }
+  
+  .stats-details h3 {
+    margin-top: 0;
+    margin-bottom: 1rem;
+    font-size: 1.25rem;
+    color: var(--color-primary);
+  }
+  
+  #challenge-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-bottom: 1rem;
+  }
+  
+  #challenge-table th,
+  #challenge-table td {
+    padding: 0.75rem;
+    text-align: left;
+    border-bottom: 1px solid #e6e6e6;
+  }
+  
+  #challenge-table th {
+    font-weight: bold;
+    background-color: var(--color-bg-alt);
+  }
+  
+  .empty-state {
+    text-align: center;
+    padding: 2rem;
+    background-color: var(--color-bg-alt);
+    border-radius: 0.5rem;
+  }
+  
+  .empty-state p {
+    margin-bottom: 1rem;
+  }
+  
+  .button {
+    display: inline-block;
+    padding: 0.5rem 1rem;
+    background-color: var(--color-primary);
+    color: white;
+    border-radius: 0.25rem;
+    text-decoration: none;
+    font-weight: bold;
+  }
+  
+  /* Estilos para la racha diaria */
+  .streak-container {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+  }
+  
+  .streak-display {
+    text-align: center;
+    padding: 1rem;
+    background-color: var(--color-bg-alt);
+    border-radius: 0.5rem;
+    flex: 1;
+  }
+  
+  .streak-number {
+    font-size: 2rem;
+    font-weight: bold;
+    color: var(--color-primary);
+  }
+  
+  .streak-label {
+    font-size: 1rem;
+    font-weight: normal;
+    color: var(--color-text-muted);
+  }
+  
+  .streak-text {
+    font-size: 0.875rem;
+    color: var(--color-text-muted);
+  }
+  
+  @media (min-width: 480px) {
+    .streak-container {
+      flex-direction: row;
+      flex-wrap: wrap;
+    }
+  }
+  
+  .calendar-view {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    margin-top: 1rem;
+  }
+  
+  .calendar-day {
+    width: 15px;
+    height: 15px;
+    background-color: #e6e6e6;
+    border-radius: 2px;
+  }
+  
+  .calendar-day.completed {
+    background-color: var(--color-success);
+  }
+  
+  @media (max-width: 768px) {
+    .stats-content {
+      grid-template-columns: 1fr;
+    }
+    
+    .accuracy-bar,
+    .category-item {
+      grid-template-columns: 2fr 3fr 1fr;
+    }
+  }
+</style>

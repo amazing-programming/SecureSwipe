@@ -1,0 +1,101 @@
+---
+// SecurityCard.astro - Componente para mostrar una tarjeta de contenido educativo
+const { title, description, category, type, codeExample, difficulty } = Astro.props;
+
+// Determinar clase según el tipo (vulnerability o good_practice)
+const cardTypeClass = type === 'vulnerability' ? 'card-vulnerability' : 'card-good-practice';
+---
+
+<div class={`security-card ${cardTypeClass}`}>
+  <div class="card-header">
+    <span class="card-category">{category}</span>
+    <span class="card-difficulty">Nivel {difficulty}</span>
+  </div>
+  <h2 class="card-title">{title}</h2>
+  <p class="card-description">{description}</p>
+  
+  {codeExample && (
+    <div class="card-code">
+      <pre><code>{codeExample}</code></pre>
+    </div>
+  )}
+  
+  <div class="card-type-indicator">
+    {type === 'vulnerability' ? '❌ Vulnerabilidad' : '✅ Buena Práctica'}
+  </div>
+</div>
+
+<style>
+  .security-card {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    color: #333;
+  }
+
+  .card-header {
+    display: flex;
+    justify-content: space-between;
+    margin-bottom: 15px;
+    font-size: 0.9rem;
+  }
+
+  .card-category {
+    background-color: #6c5ce7;
+    color: white;
+    padding: 3px 8px;
+    border-radius: 15px;
+  }
+
+  .card-difficulty {
+    background-color: #f0f0f0;
+    padding: 3px 8px;
+    border-radius: 15px;
+  }
+
+  .card-title {
+    font-size: 1.5rem;
+    margin-bottom: 15px;
+    line-height: 1.3;
+  }
+
+  .card-description {
+    font-size: 1rem;
+    margin-bottom: 15px;
+    flex-grow: 1;
+  }
+
+  .card-code {
+    background-color: #282c34;
+    border-radius: 5px;
+    padding: 15px;
+    overflow: auto;
+    margin-bottom: 15px;
+    max-height: 200px;
+  }
+
+  .card-code code {
+    color: #abb2bf;
+    font-family: 'Courier New', Courier, monospace;
+    font-size: 0.9rem;
+    white-space: pre-wrap;
+  }
+
+  .card-type-indicator {
+    background-color: #f8f9fa;
+    padding: 10px;
+    border-radius: 5px;
+    text-align: center;
+    font-weight: bold;
+  }
+
+  .card-vulnerability .card-type-indicator {
+    background-color: rgba(231, 76, 60, 0.1);
+    color: #e74c3c;
+  }
+
+  .card-good-practice .card-type-indicator {
+    background-color: rgba(46, 204, 113, 0.1);
+    color: #2ecc71;
+  }
+</style>

@@ -1,0 +1,545 @@
+---
+// daily.astro - Página para la carta diaria
+import MainLayout from '../layouts/MainLayout.astro';
+import Card from '../components/ui/Card.astro';
+import SecurityCard from '../components/ui/SecurityCard.astro';
+import FeedbackPanel from '../components/ui/FeedbackPanel.astro';
+---
+
+<MainLayout>
+  <section class="daily-header">
+    <h1>Carta Diaria</h1>
+    <p>¡Aprende un nuevo concepto de seguridad cada día!</p>
+  </section>
+
+  <section id="daily-card-container" class="daily-card-container">
+    <div class="loading">
+      <div class="spinner"></div>
+      <p>Cargando carta diaria...</p>
+    </div>
+  </section>
+  
+  <div id="feedback-container" class="feedback-container" style="display: none;">
+    <!-- El panel de retroalimentación se insertará aquí -->
+  </div>
+  
+  <section class="streak-section">
+    <div class="streak-info">
+      <h3>Tu racha actual</h3>
+      <div id="streak-counter" class="streak-counter">0</div>
+      <p>días consecutivos</p>
+    </div>
+  </section>
+</MainLayout>
+
+<script>
+  // Importación de servicios
+  import { CardService } from '../services/cardService.js';
+  import { StorageService } from '../services/storageService.js';
+  import { EvaluationService } from '../services/evaluationService.js';
+  
+  // Inicialización
+  const cardService = new CardService();
+  const storageService = new StorageService();
+  const evaluationService = new EvaluationService();
+  
+  // Elementos DOM
+  const dailyCardContainer = document.getElementById('daily-card-container');
+  const feedbackContainer = document.getElementById('feedback-container');
+  const streakCounter = document.getElementById('streak-counter');
+  
+  // Estado de la aplicación
+  let dailyCard = null;
+  
+  /**
+   * Inicializa la página de carta diaria
+   */
+  async function initDailyCard() {
+    try {
+      // Actualizar contador de racha
+      updateStreakCounter();
+      
+      // Comprobar si ya se completó la carta del día
+      if (storageService.hasDailyCardBeenAccessed()) {
+        showCompletedMessage();
+        return;
+      }
+      
+      // Cargar las tarjetas
+      await cardService.loadCards();
+      
+      // Obtener tarjetas ya vistas
+      const progress = storageService.getProgress();
+      const viewedCards = progress.cardsViewed || [];
+      
+      // Seleccionar carta diaria
+      dailyCard = await cardService.getDailyCard(viewedCards);
+      
+      if (!dailyCard) {
+        showError('No se pudo obtener una carta diaria. Por favor, inténtalo de nuevo más tarde.');
+        return;
+      }
+      
+      // Mostrar la carta diaria
+      renderDailyCard(dailyCard);
+      
+    } catch (error) {
+      console.error('Error inicializando la carta diaria:', error);
+      showError('Ocurrió un error al cargar la carta diaria.');
+    }
+  }
+  
+  /**
+   * Actualiza el contador de racha
+   */
+  function updateStreakCounter() {
+    const statistics = storageService.getStatistics();
+    streakCounter.textContent = statistics.dailyCardStreak;
+  }
+  
+  /**
+   * Renderiza la carta diaria
+   * @param {object} card - Objeto con los datos de la carta
+   */
+  function renderDailyCard(card) {
+    dailyCardContainer.innerHTML = `
+      <div class="daily-card-wrapper">
+        <div class="daily-card">
+          <div class="card">
+            <div class="card-content">
+              <div class="security-card ${card.type === 'vulnerability' ? 'card-vulnerability' : 'card-good-practice'}">
+                <div class="card-header">
+                  <span class="card-category">${card.category}</span>
+                  <span class="card-difficulty">Nivel ${card.difficulty || 1}</span>
+                </div>
+                <h2 class="card-title">${card.title}</h2>
+                <p class="card-description">${card.description}</p>
+                
+                ${card.codeExample ? `
+                  <div class="card-code">
+                    <pre><code>${escapeHtml(card.codeExample)}</code></pre>
+                  </div>
+                ` : ''}
+                
+                <div class="card-type-indicator" style="opacity: 0;">
+                  ${card.type === 'vulnerability' ? '❌ Vulnerabilidad' : '✅ Buena práctica'}
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        
+        <div class="daily-controls">
+          <button id="daily-left-btn" class="daily-btn daily-left" aria-label="Vulnerabilidad">
+            <span class="icon">❌</span>
+            <span>Vulnerabilidad</span>
+          </button>
+          <button id="daily-right-btn" class="daily-btn daily-right" aria-label="Buena práctica">
+            <span>Buena práctica</span>
+            <span class="icon">✅</span>
+          </button>
+        </div>
+      </div>
+    `;
+    
+    // Registrar eventos para los botones
+    const leftBtn = document.getElementById('daily-left-btn');
+    const rightBtn = document.getElementById('daily-right-btn');
+    
+    leftBtn.addEventListener('click', () => handleDailyCardEvaluation('left'));
+    rightBtn.addEventListener('click', () => handleDailyCardEvaluation('right'));
+  }
+  
+  /**
+   * Maneja la evaluación de la carta diaria
+   * @param {string} direction - Dirección del deslizamiento ('left' o 'right')
+   */
+  function handleDailyCardEvaluation(direction) {
+    // Evaluar respuesta
+    const isCorrect = evaluationService.evaluateSwipe(dailyCard.type, direction);
+    
+    // Registrar en almacenamiento
+    storageService.addCardViewed(dailyCard.id);
+    if (isCorrect) {
+      storageService.addCorrectAnswer(dailyCard.id);
+      storageService.addToCollection(dailyCard.id);
+    } else {
+      storageService.addIncorrectAnswer(dailyCard.id);
+    }
+    
+    // Registrar acceso a la carta diaria
+    storageService.registerDailyCardAccess();
+    
+    // Actualizar racha
+    updateStreakCounter();
+    
+    // Mostrar retroalimentación
+    const feedback = evaluationService.generateFeedback(dailyCard, isCorrect);
+    showFeedback(isCorrect, feedback.title, dailyCard.explanation, dailyCard);
+    
+    // Ocultar la carta y los controles
+    const cardWrapper = document.querySelector('.daily-card-wrapper');
+    if (cardWrapper) {
+      cardWrapper.style.display = 'none';
+    }
+  }
+  
+  /**
+   * Muestra el panel de retroalimentación
+   * @param {boolean} isCorrect - Si la respuesta fue correcta
+   * @param {string} title - Título del feedback
+   * @param {string} explanation - Explicación detallada
+   * @param {Object} card - Objeto de la tarjeta
+   */
+  function showFeedback(isCorrect, title, explanation, card) {
+    feedbackContainer.innerHTML = '';
+    
+    const feedbackElement = document.createElement('div');
+    feedbackElement.className = `feedback-panel ${isCorrect ? 'feedback-correct' : 'feedback-incorrect'}`;
+    
+    feedbackElement.innerHTML = `
+      <div class="feedback-header">
+        <span class="feedback-icon">${isCorrect ? '✅' : '❌'}</span>
+        <h3 class="feedback-title">
+          ${isCorrect ? '¡Correcto!' : 'Incorrecto'}
+        </h3>
+      </div>
+      
+      <div class="feedback-content">
+        <h4>${title}</h4>
+        <p class="feedback-explanation">${explanation}</p>
+      </div>
+      
+      <div class="feedback-complete">
+        <p>¡Has completado la carta diaria de hoy!</p>
+        <p>Vuelve mañana para una nueva carta.</p>
+      </div>
+      
+      <div class="feedback-actions">
+        <a href="/" class="btn btn-primary">Volver al inicio</a>
+        <a href="/collection" class="btn btn-secondary">Ver colección</a>
+      </div>
+    `;
+    
+    feedbackContainer.appendChild(feedbackElement);
+    feedbackContainer.style.display = 'block';
+  }
+  
+  /**
+   * Muestra un mensaje cuando ya se ha completado la carta diaria
+   */
+  function showCompletedMessage() {
+    const nextCardTime = getNextCardTime();
+    
+    dailyCardContainer.innerHTML = `
+      <div class="completed-message">
+        <h3>¡Ya has completado la carta diaria de hoy!</h3>
+        <p>Vuelve mañana para una nueva carta de seguridad.</p>
+        <div class="next-card-timer">
+          <p>Próxima carta en</p>
+          <div class="timer">${nextCardTime}</div>
+        </div>
+        <div class="actions">
+          <a href="/" class="btn btn-primary">Volver al inicio</a>
+          <a href="/collection" class="btn btn-secondary">Ver colección</a>
+        </div>
+      </div>
+    `;
+    
+    // Actualizar el temporizador cada minuto
+    setInterval(updateNextCardTimer, 60000);
+  }
+  
+  /**
+   * Obtiene el tiempo restante para la siguiente carta diaria
+   * @returns {string} Tiempo formateado (HH:MM)
+   */
+  function getNextCardTime() {
+    const now = new Date();
+    const tomorrow = new Date(now);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    tomorrow.setHours(0, 0, 0, 0);
+    
+    const diffMs = tomorrow - now;
+    const diffHrs = Math.floor(diffMs / 3600000);
+    const diffMins = Math.floor((diffMs % 3600000) / 60000);
+    
+    return `${diffHrs.toString().padStart(2, '0')}:${diffMins.toString().padStart(2, '0')}`;
+  }
+  
+  /**
+   * Actualiza el temporizador para la siguiente carta
+   */
+  function updateNextCardTimer() {
+    const timerElement = document.querySelector('.timer');
+    if (timerElement) {
+      timerElement.textContent = getNextCardTime();
+    }
+  }
+  
+  /**
+   * Escapa caracteres HTML para evitar problemas de seguridad
+   * @param {string} html - Texto a escapar
+   * @returns {string} Texto escapado
+   */
+  function escapeHtml(html) {
+    const div = document.createElement('div');
+    div.textContent = html;
+    return div.innerHTML;
+  }
+  
+  /**
+   * Muestra un mensaje de error
+   * @param {string} message - Mensaje de error
+   */
+  function showError(message) {
+    dailyCardContainer.innerHTML = `
+      <div class="error-message">
+        <p>${message}</p>
+        <button class="btn btn-primary reload-btn">Reintentar</button>
+      </div>
+    `;
+    
+    const reloadBtn = dailyCardContainer.querySelector('.reload-btn');
+    if (reloadBtn) {
+      reloadBtn.addEventListener('click', () => {
+        window.location.reload();
+      });
+    }
+  }
+  
+  // Iniciar cuando el DOM esté listo
+  document.addEventListener('DOMContentLoaded', initDailyCard);
+</script>
+
+<style>
+  .daily-header {
+    text-align: center;
+    padding: 30px 20px;
+    margin-bottom: 30px;
+    background-color: rgba(52, 152, 219, 0.1);
+    border-radius: 10px;
+  }
+
+  .daily-header h1 {
+    font-size: 2.2rem;
+    margin-bottom: 15px;
+    color: #3498db;
+  }
+
+  .daily-header p {
+    font-size: 1.1rem;
+    color: #555;
+  }
+
+  .daily-card-container {
+    display: flex;
+    justify-content: center;
+    margin-bottom: 40px;
+  }
+
+  .daily-card-wrapper {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    max-width: 500px;
+    width: 100%;
+  }
+
+  .daily-card {
+    width: 100%;
+    max-width: 400px;
+    margin-bottom: 20px;
+  }
+
+  .daily-controls {
+    display: flex;
+    justify-content: space-between;
+    width: 100%;
+    max-width: 400px;
+  }
+
+  .daily-btn {
+    display: flex;
+    align-items: center;
+    padding: 10px 20px;
+    border: none;
+    border-radius: 50px;
+    font-weight: bold;
+    cursor: pointer;
+    transition: all 0.2s ease;
+  }
+
+  .daily-left {
+    background-color: rgba(231, 76, 60, 0.1);
+    color: #e74c3c;
+  }
+
+  .daily-right {
+    background-color: rgba(46, 204, 113, 0.1);
+    color: #2ecc71;
+  }
+
+  .daily-btn:hover {
+    transform: scale(1.05);
+  }
+
+  .daily-btn .icon {
+    font-size: 1.2rem;
+    margin: 0 5px;
+  }
+
+  .daily-left .icon {
+    margin-right: 5px;
+  }
+
+  .daily-right .icon {
+    margin-left: 5px;
+  }
+
+  .streak-section {
+    text-align: center;
+    margin-top: 40px;
+    padding: 30px;
+    background-color: #f8f9fa;
+    border-radius: 10px;
+  }
+
+  .streak-info h3 {
+    margin-bottom: 15px;
+    color: #555;
+  }
+
+  .streak-counter {
+    font-size: 3rem;
+    font-weight: bold;
+    color: #3498db;
+    margin-bottom: 5px;
+  }
+
+  .completed-message {
+    text-align: center;
+    padding: 40px 20px;
+    background-color: #f8f9fa;
+    border-radius: 10px;
+    max-width: 500px;
+    margin: 0 auto;
+  }
+
+  .completed-message h3 {
+    font-size: 1.4rem;
+    margin-bottom: 15px;
+    color: #555;
+  }
+
+  .completed-message p {
+    color: #777;
+    margin-bottom: 20px;
+  }
+
+  .next-card-timer {
+    margin: 20px 0;
+  }
+
+  .timer {
+    font-size: 2.5rem;
+    font-weight: bold;
+    color: #3498db;
+    margin: 10px 0;
+  }
+
+  .actions {
+    display: flex;
+    justify-content: space-around;
+    margin-top: 20px;
+  }
+
+  .btn {
+    display: inline-block;
+    padding: 10px 20px;
+    text-decoration: none;
+    border-radius: 5px;
+    font-weight: bold;
+    transition: background-color 0.2s;
+  }
+
+  .btn-primary {
+    background-color: #3498db;
+    color: white;
+  }
+
+  .btn-primary:hover {
+    background-color: #2980b9;
+  }
+
+  .btn-secondary {
+    background-color: #f0f0f0;
+    color: #333;
+  }
+
+  .btn-secondary:hover {
+    background-color: #e0e0e0;
+  }
+
+  .feedback-container {
+    max-width: 600px;
+    margin: 0 auto 40px;
+  }
+
+  .feedback-complete {
+    margin-top: 20px;
+    padding: 15px;
+    background-color: rgba(52, 152, 219, 0.1);
+    border-radius: 5px;
+    text-align: center;
+  }
+
+  .loading {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 40px;
+    color: #777;
+  }
+
+  .spinner {
+    width: 40px;
+    height: 40px;
+    border: 4px solid rgba(0, 0, 0, 0.1);
+    border-left-color: #3498db;
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+    margin-bottom: 15px;
+  }
+
+  .error-message {
+    background-color: rgba(231, 76, 60, 0.1);
+    padding: 20px;
+    border-radius: 10px;
+    text-align: center;
+    color: #e74c3c;
+    max-width: 500px;
+    margin: 0 auto;
+  }
+
+  .error-message p {
+    margin-bottom: 15px;
+  }
+
+  @keyframes spin {
+    to { transform: rotate(360deg); }
+  }
+
+  @media (max-width: 768px) {
+    .actions {
+      flex-direction: column;
+      gap: 10px;
+    }
+    
+    .btn {
+      width: 100%;
+      text-align: center;
+    }
+  }
+</style>

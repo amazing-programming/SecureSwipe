@@ -1,0 +1,498 @@
+---
+// index.astro - Página principal de la aplicación
+import MainLayout from '../layouts/MainLayout.astro';
+import Card from '../components/ui/Card.astro';
+import SecurityCard from '../components/ui/SecurityCard.astro';
+import FeedbackPanel from '../components/ui/FeedbackPanel.astro';
+---
+
+<MainLayout>
+  <section class="hero">
+    <div class="hero-content">
+      <h1>SecureSwipe</h1>
+      <p>Aprende desarrollo seguro de software de forma divertida</p>
+      <p class="subtitle">Desliza a la derecha para buenas prácticas, a la izquierda para vulnerabilidades</p>
+    </div>
+  </section>
+
+  <section class="swipe-section">
+    <div id="swipe-container" class="swipe-container">
+      <!-- Las tarjetas se cargarán dinámicamente con JavaScript -->
+      <div class="loading-cards">
+        <div class="spinner"></div>
+        <p>Cargando tarjetas...</p>
+      </div>
+    </div>
+    
+    <div class="swipe-controls">
+      <button id="swipe-left-btn" class="swipe-btn swipe-left" aria-label="Vulnerabilidad">
+        <span class="icon">❌</span>
+        <span>Vulnerabilidad</span>
+      </button>
+      <button id="swipe-right-btn" class="swipe-btn swipe-right" aria-label="Buena práctica">
+        <span>Buena práctica</span>
+        <span class="icon">✅</span>
+      </button>
+    </div>
+  </section>
+  
+  <div id="feedback-container" class="feedback-container" style="display: none;">
+    <!-- El panel de retroalimentación se insertará aquí -->
+  </div>
+</MainLayout>
+
+<script>
+  // Importación de servicios
+  import { SwipeCard } from '../components/interactive/SwipeCard.js';
+  import { CardService } from '../services/cardService.js';
+  import { StorageService } from '../services/storageService.js';
+  import { EvaluationService } from '../services/evaluationService.js';
+  
+  // Inicialización
+  const cardService = new CardService();
+  const storageService = new StorageService();
+  const evaluationService = new EvaluationService();
+  
+  // Elementos DOM
+  const swipeContainer = document.getElementById('swipe-container');
+  const feedbackContainer = document.getElementById('feedback-container');
+  const swipeLeftBtn = document.getElementById('swipe-left-btn');
+  const swipeRightBtn = document.getElementById('swipe-right-btn');
+  
+  // Estado de la aplicación
+  let currentCards = [];
+  let swipeInstance = null;
+  let currentCardIndex = 0;
+  let startTime = null;
+  
+  /**
+   * Inicializa la aplicación
+   */
+  async function initApp() {
+    try {
+      // Cargar las tarjetas del JSON
+      await cardService.loadCards();
+      
+      // Obtener todas las tarjetas y ordenarlas aleatoriamente
+      currentCards = await cardService.getOrderedCards('random');
+      
+      if (currentCards.length === 0) {
+        showError('No se encontraron tarjetas educativas.');
+        return;
+      }
+      
+      // Crear elementos HTML para las tarjetas
+      renderCards(currentCards);
+      
+      // Inicializar el sistema de deslizamiento
+      initSwipeSystem();
+      
+      // Registrar eventos para los botones de control
+      registerButtonEvents();
+      
+      // Iniciar tiempo para la primera tarjeta
+      startTime = new Date();
+      
+    } catch (error) {
+      console.error('Error inicializando la aplicación:', error);
+      showError('Ocurrió un error al cargar la aplicación.');
+    }
+  }
+  
+  /**
+   * Renderiza las tarjetas en el DOM
+   * @param {Array} cards - Array de objetos de tarjetas
+   */
+  function renderCards(cards) {
+    // Limpiar el contenedor
+    swipeContainer.innerHTML = '';
+    
+    // Crear elementos de tarjeta
+    cards.forEach(card => {
+      const cardElement = document.createElement('div');
+      cardElement.className = 'swipe-card';
+      cardElement.dataset.id = card.id;
+      cardElement.dataset.type = card.type;
+      
+      cardElement.innerHTML = `
+        <div class="card">
+          <div class="card-content">
+            <div class="security-card ${card.type === 'vulnerability' ? 'card-vulnerability' : 'card-good-practice'}">
+              <div class="card-header">
+                <span class="card-category">${card.category}</span>
+                <span class="card-difficulty">Nivel ${card.difficulty || 1}</span>
+              </div>
+              <h2 class="card-title">${card.title}</h2>
+              <p class="card-description">${card.description}</p>
+              
+              ${card.codeExample ? `
+                <div class="card-code">
+                  <pre><code>${escapeHtml(card.codeExample)}</code></pre>
+                </div>
+              ` : ''}
+              
+              <div class="card-type-indicator" style="opacity: 0;">
+                ${card.type === 'vulnerability' ? '❌ Vulnerabilidad' : '✅ Buena práctica'}
+              </div>
+            </div>
+          </div>
+        </div>
+      `;
+      
+      swipeContainer.appendChild(cardElement);
+    });
+  }
+  
+  /**
+   * Escapa caracteres HTML para evitar problemas de seguridad
+   * @param {string} html - Texto a escapar
+   * @returns {string} Texto escapado
+   */
+  function escapeHtml(html) {
+    const div = document.createElement('div');
+    div.textContent = html;
+    return div.innerHTML;
+  }
+  
+  /**
+   * Inicializa el sistema de deslizamiento de tarjetas
+   */
+  function initSwipeSystem() {
+    swipeInstance = new SwipeCard({
+      container: swipeContainer,
+      onSwipeLeft: handleSwipeLeft,
+      onSwipeRight: handleSwipeRight,
+      onCardChange: handleCardChange
+    });
+  }
+  
+  /**
+   * Registra eventos para los botones de control
+   */
+  function registerButtonEvents() {
+    swipeLeftBtn.addEventListener('click', () => {
+      swipeInstance?.swipe('left');
+    });
+    
+    swipeRightBtn.addEventListener('click', () => {
+      swipeInstance?.swipe('right');
+    });
+  }
+  
+  /**
+   * Maneja el evento de deslizamiento a la izquierda (rechazar)
+   * @param {HTMLElement} cardElement - Elemento DOM de la tarjeta
+   * @param {number} index - Índice de la tarjeta
+   */
+  function handleSwipeLeft(cardElement, index) {
+    const cardId = cardElement.dataset.id;
+    const cardType = cardElement.dataset.type;
+    const card = currentCards[index];
+    
+    // Calcular tiempo de respuesta
+    const responseTime = new Date() - startTime;
+    
+    // Evaluar respuesta
+    const isCorrect = evaluationService.evaluateSwipe(cardType, 'left');
+    
+    // Registrar en almacenamiento
+    storageService.addCardViewed(cardId);
+    if (isCorrect) {
+      storageService.addCorrectAnswer(cardId);
+    } else {
+      storageService.addIncorrectAnswer(cardId);
+    }
+    
+    // Mostrar retroalimentación
+    const feedback = evaluationService.generateFeedback(card, isCorrect);
+    showFeedback(isCorrect, feedback.title, card.explanation, card);
+    
+    // Resetear tiempo para la siguiente tarjeta
+    startTime = new Date();
+  }
+  
+  /**
+   * Maneja el evento de deslizamiento a la derecha (aceptar)
+   * @param {HTMLElement} cardElement - Elemento DOM de la tarjeta
+   * @param {number} index - Índice de la tarjeta
+   */
+  function handleSwipeRight(cardElement, index) {
+    const cardId = cardElement.dataset.id;
+    const cardType = cardElement.dataset.type;
+    const card = currentCards[index];
+    
+    // Calcular tiempo de respuesta
+    const responseTime = new Date() - startTime;
+    
+    // Evaluar respuesta
+    const isCorrect = evaluationService.evaluateSwipe(cardType, 'right');
+    
+    // Registrar en almacenamiento
+    storageService.addCardViewed(cardId);
+    if (isCorrect) {
+      storageService.addCorrectAnswer(cardId);
+      // Si es correcto, añadir a la colección automáticamente
+      storageService.addToCollection(cardId);
+    } else {
+      storageService.addIncorrectAnswer(cardId);
+    }
+    
+    // Mostrar retroalimentación
+    const feedback = evaluationService.generateFeedback(card, isCorrect);
+    showFeedback(isCorrect, feedback.title, card.explanation, card);
+    
+    // Resetear tiempo para la siguiente tarjeta
+    startTime = new Date();
+  }
+  
+  /**
+   * Maneja el cambio de tarjeta actual
+   * @param {HTMLElement} cardElement - Elemento DOM de la nueva tarjeta actual
+   * @param {number} index - Índice de la nueva tarjeta actual
+   */
+  function handleCardChange(cardElement, index) {
+    currentCardIndex = index;
+    
+    // Actualizar controles de UI si es necesario
+    // Por ejemplo, podría desactivar los botones si es la última tarjeta
+    
+    // Resetear tiempo para la nueva tarjeta
+    startTime = new Date();
+  }
+  
+  /**
+   * Muestra el panel de retroalimentación
+   * @param {boolean} isCorrect - Si la respuesta fue correcta
+   * @param {string} title - Título del feedback
+   * @param {string} explanation - Explicación detallada
+   * @param {Object} card - Objeto de la tarjeta
+   */
+  function showFeedback(isCorrect, title, explanation, card) {
+    feedbackContainer.innerHTML = '';
+    
+    const feedbackElement = document.createElement('div');
+    feedbackElement.className = `feedback-panel ${isCorrect ? 'feedback-correct' : 'feedback-incorrect'}`;
+    
+    feedbackElement.innerHTML = `
+      <div class="feedback-header">
+        <span class="feedback-icon">${isCorrect ? '✅' : '❌'}</span>
+        <h3 class="feedback-title">
+          ${isCorrect ? '¡Correcto!' : 'Incorrecto'}
+        </h3>
+      </div>
+      
+      <div class="feedback-content">
+        <h4>${title}</h4>
+        <p class="feedback-explanation">${explanation}</p>
+      </div>
+      
+      <div class="feedback-actions">
+        <button class="btn btn-primary feedback-next">Siguiente tarjeta</button>
+        ${isCorrect ? `<button class="btn btn-secondary feedback-save" ${storageService.getCollection().includes(card.id) ? 'disabled' : ''}>
+          ${storageService.getCollection().includes(card.id) ? 'Ya en colección' : 'Guardar en colección'}
+        </button>` : ''}
+      </div>
+    `;
+    
+    feedbackContainer.appendChild(feedbackElement);
+    feedbackContainer.style.display = 'block';
+    
+    // Registrar eventos para los botones del feedback
+    const nextButton = feedbackElement.querySelector('.feedback-next');
+    if (nextButton) {
+      nextButton.addEventListener('click', () => {
+        feedbackContainer.style.display = 'none';
+      });
+    }
+    
+    const saveButton = feedbackElement.querySelector('.feedback-save');
+    if (saveButton && !saveButton.disabled) {
+      saveButton.addEventListener('click', () => {
+        storageService.addToCollection(card.id);
+        saveButton.textContent = 'Ya en colección';
+        saveButton.disabled = true;
+      });
+    }
+  }
+  
+  /**
+   * Muestra un mensaje de error
+   * @param {string} message - Mensaje de error
+   */
+  function showError(message) {
+    swipeContainer.innerHTML = `
+      <div class="error-message">
+        <p>${message}</p>
+        <button class="btn btn-primary reload-btn">Reintentar</button>
+      </div>
+    `;
+    
+    const reloadBtn = swipeContainer.querySelector('.reload-btn');
+    if (reloadBtn) {
+      reloadBtn.addEventListener('click', () => {
+        window.location.reload();
+      });
+    }
+  }
+  
+  // Iniciar la aplicación cuando el DOM esté listo
+  document.addEventListener('DOMContentLoaded', initApp);
+</script>
+
+<style>
+  .hero {
+    text-align: center;
+    padding: 40px 20px;
+    margin-bottom: 30px;
+    background-color: rgba(52, 152, 219, 0.1);
+    border-radius: 10px;
+  }
+
+  .hero-content h1 {
+    font-size: 2.5rem;
+    margin-bottom: 15px;
+    color: #3498db;
+  }
+
+  .hero-content p {
+    font-size: 1.2rem;
+    margin-bottom: 10px;
+    color: #555;
+  }
+
+  .hero-content .subtitle {
+    font-size: 1rem;
+    color: #777;
+  }
+
+  .swipe-section {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    margin-bottom: 40px;
+  }
+
+  .swipe-container {
+    width: 100%;
+    max-width: 400px;
+    height: 500px;
+    position: relative;
+    margin-bottom: 20px;
+    transition: background-color 0.3s ease;
+    border-radius: 10px;
+  }
+
+  .swipe-card {
+    position: absolute;
+    width: 100%;
+    height: 100%;
+    top: 0;
+    left: 0;
+    cursor: grab;
+  }
+
+  .swipe-card:active {
+    cursor: grabbing;
+  }
+
+  .swipe-controls {
+    display: flex;
+    justify-content: space-between;
+    width: 100%;
+    max-width: 400px;
+    margin-top: 20px;
+  }
+
+  .swipe-btn {
+    display: flex;
+    align-items: center;
+    padding: 10px 20px;
+    border: none;
+    border-radius: 50px;
+    font-weight: bold;
+    cursor: pointer;
+    transition: all 0.2s ease;
+  }
+
+  .swipe-left {
+    background-color: rgba(231, 76, 60, 0.1);
+    color: #e74c3c;
+  }
+
+  .swipe-right {
+    background-color: rgba(46, 204, 113, 0.1);
+    color: #2ecc71;
+  }
+
+  .swipe-btn:hover {
+    transform: scale(1.05);
+  }
+
+  .swipe-btn .icon {
+    font-size: 1.2rem;
+    margin: 0 5px;
+  }
+
+  .swipe-left .icon {
+    margin-right: 5px;
+  }
+
+  .swipe-right .icon {
+    margin-left: 5px;
+  }
+
+  .loading-cards {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+    width: 100%;
+    color: #777;
+  }
+
+  .spinner {
+    width: 40px;
+    height: 40px;
+    border: 4px solid rgba(0, 0, 0, 0.1);
+    border-left-color: #3498db;
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+    margin-bottom: 15px;
+  }
+
+  .feedback-container {
+    max-width: 600px;
+    margin: 0 auto 40px;
+  }
+
+  .error-message {
+    background-color: rgba(231, 76, 60, 0.1);
+    padding: 20px;
+    border-radius: 10px;
+    text-align: center;
+    color: #e74c3c;
+  }
+
+  .error-message p {
+    margin-bottom: 15px;
+  }
+
+  @keyframes spin {
+    to { transform: rotate(360deg); }
+  }
+
+  @media (max-width: 480px) {
+    .swipe-container {
+      height: 450px;
+    }
+    
+    .hero-content h1 {
+      font-size: 2rem;
+    }
+    
+    .hero-content p {
+      font-size: 1rem;
+    }
+  }
+</style>

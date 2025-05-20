@@ -1,0 +1,439 @@
+---
+// collection.astro - Página para ver la colección de tarjetas guardadas
+import MainLayout from '../layouts/MainLayout.astro';
+import Card from '../components/ui/Card.astro';
+import SecurityCard from '../components/ui/SecurityCard.astro';
+---
+
+<MainLayout>
+  <section class="collection-header">
+    <h1>Mi Colección</h1>
+    <p>Aquí encontrarás las tarjetas que has guardado en tu colección de conceptos de seguridad.</p>
+  </section>
+
+  <section class="filters">
+    <div class="filter-group">
+      <label for="category-filter">Filtrar por categoría:</label>
+      <select id="category-filter" class="filter-select">
+        <option value="all">Todas las categorías</option>
+        <!-- Las categorías se cargarán dinámicamente -->
+      </select>
+    </div>
+    
+    <div class="filter-group">
+      <label for="type-filter">Filtrar por tipo:</label>
+      <select id="type-filter" class="filter-select">
+        <option value="all">Todos los tipos</option>
+        <option value="good_practice">Buenas prácticas</option>
+        <option value="vulnerability">Vulnerabilidades</option>
+      </select>
+    </div>
+  </section>
+
+  <section id="collection-grid" class="collection-grid">
+    <div class="loading">
+      <div class="spinner"></div>
+      <p>Cargando colección...</p>
+    </div>
+  </section>
+  
+  <div id="empty-collection" class="empty-collection" style="display: none;">
+    <div class="empty-message">
+      <h3>Tu colección está vacía</h3>
+      <p>Comienza a deslizar tarjetas y aprende conceptos de seguridad para añadirlos a tu colección.</p>
+      <a href="/" class="btn btn-primary">Ir a deslizar tarjetas</a>
+    </div>
+  </div>
+</MainLayout>
+
+<script>
+  // Importación de servicios
+  import { CardService } from '../services/cardService.js';
+  import { StorageService } from '../services/storageService.js';
+  
+  // Inicialización
+  const cardService = new CardService();
+  const storageService = new StorageService();
+  
+  // Elementos DOM
+  const collectionGrid = document.getElementById('collection-grid');
+  const emptyCollection = document.getElementById('empty-collection');
+  const categoryFilter = document.getElementById('category-filter');
+  const typeFilter = document.getElementById('type-filter');
+  
+  // Estado
+  let collectionCards = [];
+  let categories = [];
+  
+  /**
+   * Inicializa la página de colección
+   */
+  async function initCollection() {
+    try {
+      // Cargar las categorías
+      await cardService.loadCards();
+      categories = await cardService.getCategories();
+      
+      // Cargar opciones de categorías en el filtro
+      populateCategoryFilter();
+      
+      // Obtener la colección del usuario
+      const collectionIds = storageService.getCollection() || [];
+      
+      if (collectionIds.length === 0) {
+        // Mostrar mensaje de colección vacía
+        showEmptyCollection();
+        return;
+      }
+      
+      // Obtener las tarjetas de la colección
+      collectionCards = await cardService.getCollectionCards(collectionIds);
+      
+      // Mostrar las tarjetas
+      renderCollectionCards(collectionCards);
+      
+      // Registrar eventos de filtrado
+      registerFilterEvents();
+      
+    } catch (error) {
+      console.error('Error inicializando la colección:', error);
+      showError('Ocurrió un error al cargar tu colección.');
+    }
+  }
+  
+  /**
+   * Muestra el mensaje de colección vacía
+   */
+  function showEmptyCollection() {
+    collectionGrid.style.display = 'none';
+    emptyCollection.style.display = 'block';
+  }
+  
+  /**
+   * Puebla el selector de filtro de categorías
+   */
+  function populateCategoryFilter() {
+    categoryFilter.innerHTML = '<option value="all">Todas las categorías</option>';
+    
+    categories.forEach(category => {
+      const option = document.createElement('option');
+      option.value = category.id;
+      option.textContent = category.name;
+      categoryFilter.appendChild(option);
+    });
+  }
+  
+  /**
+   * Registra eventos para los filtros
+   */
+  function registerFilterEvents() {
+    categoryFilter.addEventListener('change', applyFilters);
+    typeFilter.addEventListener('change', applyFilters);
+  }
+  
+  /**
+   * Aplica los filtros a las tarjetas de la colección
+   */
+  function applyFilters() {
+    const categoryValue = categoryFilter.value;
+    const typeValue = typeFilter.value;
+    
+    let filteredCards = [...collectionCards];
+    
+    // Filtrar por categoría
+    if (categoryValue !== 'all') {
+      filteredCards = filteredCards.filter(card => card.category === categoryValue);
+    }
+    
+    // Filtrar por tipo
+    if (typeValue !== 'all') {
+      filteredCards = filteredCards.filter(card => card.type === typeValue);
+    }
+    
+    // Renderizar las tarjetas filtradas
+    renderCollectionCards(filteredCards);
+  }
+  
+  /**
+   * Renderiza las tarjetas de la colección en el grid
+   * @param {Array} cards - Array de objetos de tarjetas
+   */
+  function renderCollectionCards(cards) {
+    collectionGrid.innerHTML = '';
+    
+    if (cards.length === 0) {
+      collectionGrid.innerHTML = `
+        <div class="no-results">
+          <p>No se encontraron tarjetas que coincidan con los filtros.</p>
+        </div>
+      `;
+      return;
+    }
+    
+    cards.forEach(card => {
+      const cardElement = document.createElement('div');
+      cardElement.className = 'collection-card';
+      cardElement.dataset.id = card.id;
+      
+      cardElement.innerHTML = `
+        <div class="card">
+          <div class="card-content">
+            <div class="security-card ${card.type === 'vulnerability' ? 'card-vulnerability' : 'card-good-practice'}">
+              <div class="card-header">
+                <span class="card-category">${getCategoryName(card.category)}</span>
+                <span class="card-difficulty">Nivel ${card.difficulty || 1}</span>
+              </div>
+              <h2 class="card-title">${card.title}</h2>
+              <p class="card-description">${card.description}</p>
+              
+              ${card.codeExample ? `
+                <div class="card-code">
+                  <pre><code>${escapeHtml(card.codeExample)}</code></pre>
+                </div>
+              ` : ''}
+              
+              <div class="card-type-indicator">
+                ${card.type === 'vulnerability' ? '❌ Vulnerabilidad' : '✅ Buena práctica'}
+              </div>
+            </div>
+          </div>
+        </div>
+        <button class="remove-btn" data-id="${card.id}">Eliminar de la colección</button>
+      `;
+      
+      collectionGrid.appendChild(cardElement);
+      
+      // Registrar evento para el botón de eliminar
+      const removeBtn = cardElement.querySelector('.remove-btn');
+      removeBtn.addEventListener('click', () => removeFromCollection(card.id));
+    });
+  }
+  
+  /**
+   * Obtiene el nombre de la categoría a partir de su ID
+   * @param {string} categoryId - ID de la categoría
+   * @returns {string} Nombre de la categoría
+   */
+  function getCategoryName(categoryId) {
+    const category = categories.find(cat => cat.id === categoryId);
+    return category ? category.name : categoryId;
+  }
+  
+  /**
+   * Elimina una tarjeta de la colección
+   * @param {string} cardId - ID de la tarjeta a eliminar
+   */
+  function removeFromCollection(cardId) {
+    if (confirm('¿Estás seguro de que quieres eliminar esta tarjeta de tu colección?')) {
+      // Eliminar del almacenamiento
+      storageService.removeFromCollection(cardId);
+      
+      // Eliminar de la lista en memoria
+      collectionCards = collectionCards.filter(card => card.id !== cardId);
+      
+      // Si la colección queda vacía, mostrar mensaje
+      if (collectionCards.length === 0) {
+        showEmptyCollection();
+        return;
+      }
+      
+      // Volver a aplicar los filtros
+      applyFilters();
+    }
+  }
+  
+  /**
+   * Escapa caracteres HTML para evitar problemas de seguridad
+   * @param {string} html - Texto a escapar
+   * @returns {string} Texto escapado
+   */
+  function escapeHtml(html) {
+    const div = document.createElement('div');
+    div.textContent = html;
+    return div.innerHTML;
+  }
+  
+  /**
+   * Muestra un mensaje de error
+   * @param {string} message - Mensaje de error
+   */
+  function showError(message) {
+    collectionGrid.innerHTML = `
+      <div class="error-message">
+        <p>${message}</p>
+        <button class="btn btn-primary reload-btn">Reintentar</button>
+      </div>
+    `;
+    
+    const reloadBtn = collectionGrid.querySelector('.reload-btn');
+    if (reloadBtn) {
+      reloadBtn.addEventListener('click', () => {
+        window.location.reload();
+      });
+    }
+  }
+  
+  // Iniciar cuando el DOM esté listo
+  document.addEventListener('DOMContentLoaded', initCollection);
+</script>
+
+<style>
+  .collection-header {
+    text-align: center;
+    padding: 30px 20px;
+    margin-bottom: 30px;
+    background-color: rgba(52, 152, 219, 0.1);
+    border-radius: 10px;
+  }
+
+  .collection-header h1 {
+    font-size: 2.2rem;
+    margin-bottom: 15px;
+    color: #3498db;
+  }
+
+  .collection-header p {
+    font-size: 1.1rem;
+    color: #555;
+  }
+
+  .filters {
+    display: flex;
+    justify-content: space-between;
+    margin-bottom: 30px;
+    flex-wrap: wrap;
+  }
+
+  .filter-group {
+    display: flex;
+    flex-direction: column;
+    margin-bottom: 15px;
+    min-width: 200px;
+  }
+
+  .filter-group label {
+    margin-bottom: 5px;
+    font-weight: 500;
+    color: #555;
+  }
+
+  .filter-select {
+    padding: 8px 12px;
+    border: 1px solid #ddd;
+    border-radius: 5px;
+    font-size: 0.9rem;
+  }
+
+  .collection-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+    gap: 30px;
+    margin-bottom: 40px;
+  }
+
+  .collection-card {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .collection-card .card {
+    margin-bottom: 10px;
+    height: 400px;
+  }
+
+  .remove-btn {
+    padding: 8px 15px;
+    background-color: rgba(231, 76, 60, 0.1);
+    color: #e74c3c;
+    border: none;
+    border-radius: 5px;
+    cursor: pointer;
+    font-weight: 500;
+    transition: all 0.2s ease;
+  }
+
+  .remove-btn:hover {
+    background-color: rgba(231, 76, 60, 0.2);
+  }
+
+  .empty-collection, .no-results {
+    text-align: center;
+    padding: 40px 20px;
+    margin: 30px 0;
+    background-color: #f8f9fa;
+    border-radius: 10px;
+  }
+
+  .empty-message h3 {
+    font-size: 1.5rem;
+    margin-bottom: 15px;
+    color: #555;
+  }
+
+  .empty-message p {
+    margin-bottom: 20px;
+    color: #777;
+  }
+
+  .btn {
+    display: inline-block;
+    padding: 10px 20px;
+    background-color: #3498db;
+    color: white;
+    text-decoration: none;
+    border-radius: 5px;
+    font-weight: bold;
+    transition: background-color 0.2s;
+  }
+
+  .btn:hover {
+    background-color: #2980b9;
+  }
+
+  .loading {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    grid-column: 1 / -1;
+    padding: 40px;
+    color: #777;
+  }
+
+  .spinner {
+    width: 40px;
+    height: 40px;
+    border: 4px solid rgba(0, 0, 0, 0.1);
+    border-left-color: #3498db;
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+    margin-bottom: 15px;
+  }
+
+  .error-message {
+    grid-column: 1 / -1;
+    background-color: rgba(231, 76, 60, 0.1);
+    padding: 20px;
+    border-radius: 10px;
+    text-align: center;
+    color: #e74c3c;
+  }
+
+  .error-message p {
+    margin-bottom: 15px;
+  }
+
+  @keyframes spin {
+    to { transform: rotate(360deg); }
+  }
+
+  @media (max-width: 768px) {
+    .filters {
+      flex-direction: column;
+    }
+    
+    .filter-group {
+      width: 100%;
+    }
+  }
+</style>

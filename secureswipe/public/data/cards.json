@@ -1,0 +1,111 @@
+{
+  "categories": [
+    {
+      "id": "injection",
+      "name": "Inyección SQL",
+      "description": "Vulnerabilidades relacionadas con inyección SQL"
+    },
+    {
+      "id": "xss",
+      "name": "Cross-Site Scripting (XSS)",
+      "description": "Vulnerabilidades que permiten la inyección de scripts maliciosos"
+    },
+    {
+      "id": "auth",
+      "name": "Autenticación y Autorización",
+      "description": "Prácticas seguras para autenticación y control de acceso"
+    },
+    {
+      "id": "csrf",
+      "name": "Cross-Site Request Forgery",
+      "description": "Ataques que fuerzan acciones no deseadas en aplicaciones web"
+    },
+    {
+      "id": "crypto",
+      "name": "Criptografía",
+      "description": "Buenas prácticas de cifrado y gestión de secretos"
+    }
+  ],
+  "cards": [
+    {
+      "id": "card1",
+      "title": "Preparación de consultas parametrizadas",
+      "description": "Usar consultas parametrizadas previene la inyección SQL al separar el código SQL de los datos",
+      "category": "injection",
+      "type": "good_practice",
+      "codeExample": "// Ejemplo seguro (Node.js con PostgreSQL)\nconst query = 'SELECT * FROM users WHERE username = $1';\nconst values = [userInput];\nawait client.query(query, values);",
+      "explanation": "Las consultas parametrizadas evitan la inyección SQL al tratar los parámetros como datos puros, no como parte del código SQL, impidiendo que un atacante manipule la estructura de la consulta.",
+      "difficulty": 1
+    },
+    {
+      "id": "card2",
+      "title": "Concatenación directa de SQL",
+      "description": "Insertar variables directamente en consultas SQL sin sanitizar",
+      "category": "injection",
+      "type": "vulnerability",
+      "codeExample": "// Ejemplo vulnerable\nconst query = 'SELECT * FROM users WHERE username = \\'' + username + '\\'';\nconst result = await connection.query(query);",
+      "explanation": "La concatenación directa de entrada de usuario en consultas SQL permite a un atacante modificar la estructura de la consulta, potencialmente accediendo o modificando datos no autorizados.",
+      "difficulty": 1
+    },
+    {
+      "id": "card3",
+      "title": "Sanitización del lado del cliente",
+      "description": "Confiar únicamente en validaciones JavaScript del lado del cliente",
+      "category": "xss",
+      "type": "vulnerability",
+      "codeExample": "// Validación solo en cliente\n$('#userInput').on('input', function() {\n  const input = $(this).val();\n  if (!/^[a-zA-Z0-9]+$/.test(input)) {\n    alert('Solo se permiten letras y números');\n  }\n});",
+      "explanation": "Las validaciones del lado del cliente pueden ser fácilmente eludidas por un atacante mediante herramientas como inspectores de navegador o proxies HTTP. Siempre debe implementarse validación del lado del servidor.",
+      "difficulty": 2
+    },
+    {
+      "id": "card4",
+      "title": "HttpOnly en cookies sensibles",
+      "description": "Usar el flag HttpOnly en cookies que contienen datos sensibles",
+      "category": "xss",
+      "type": "good_practice",
+      "codeExample": "// Configuración segura de cookies en Express.js\nres.cookie('sessionId', token, {\n  httpOnly: true,\n  secure: true,\n  sameSite: 'strict'\n});",
+      "explanation": "El flag HttpOnly impide que el JavaScript del cliente acceda a la cookie, protegiéndola contra ataques XSS que intentan robar información sensible como tokens de sesión.",
+      "difficulty": 2
+    },
+    {
+      "id": "card5",
+      "title": "Almacenamiento de contraseñas en texto plano",
+      "description": "Guardar contraseñas sin cifrar en la base de datos",
+      "category": "auth",
+      "type": "vulnerability",
+      "codeExample": "// Código vulnerable\nconst query = 'INSERT INTO users (username, password) VALUES ($1, $2)';\nawait client.query(query, [username, password]);",
+      "explanation": "Almacenar contraseñas en texto plano expone a todos los usuarios si la base de datos es comprometida. Siempre deben usarse algoritmos de hashing seguros como bcrypt o Argon2.",
+      "difficulty": 1
+    },
+    {
+      "id": "card6",
+      "title": "CSRF Token en formularios",
+      "description": "Incluir tokens anti-CSRF en formularios y peticiones",
+      "category": "csrf",
+      "type": "good_practice",
+      "codeExample": "// Ejemplo en un formulario con Express y csurf\napp.use(csrfProtection);\n\napp.get('/form', (req, res) => {\n  res.render('form', { csrfToken: req.csrfToken() });\n});\n\n// En el HTML\n<form action=\"/process\" method=\"POST\">\n  <input type=\"hidden\" name=\"_csrf\" value=\"{{csrfToken}}\">\n  <!-- otros campos -->\n</form>",
+      "explanation": "Los tokens CSRF previenen ataques de falsificación de solicitud entre sitios al requerir un valor único y secreto en cada solicitud que modifica datos.",
+      "difficulty": 3
+    },
+    {
+      "id": "card7",
+      "title": "Uso de algoritmos de cifrado obsoletos",
+      "description": "Implementar cifrado con algoritmos desactualizados como MD5 o SHA-1",
+      "category": "crypto",
+      "type": "vulnerability",
+      "codeExample": "// Uso de algoritmo inseguro\nconst crypto = require('crypto');\nconst hash = crypto.createHash('md5').update(password).digest('hex');",
+      "explanation": "Algoritmos como MD5 y SHA-1 son vulnerables a ataques de colisión y fuerza bruta. Para hashing de contraseñas se deben usar algoritmos diseñados específicamente como bcrypt, Argon2 o PBKDF2.",
+      "difficulty": 2
+    },
+    {
+      "id": "card8",
+      "title": "Gestión segura de dependencias",
+      "description": "Mantener actualizadas las bibliotecas y frameworks de terceros",
+      "category": "general",
+      "type": "good_practice",
+      "codeExample": "// Verificar dependencias regularmente\n$ npm audit\n$ npm audit fix\n\n# O usando herramientas como Dependabot en GitHub",
+      "explanation": "Las dependencias desactualizadas pueden contener vulnerabilidades conocidas. Implementar un proceso para actualizar regularmente los componentes de terceros y revisar alertas de seguridad reduce significativamente el riesgo.",
+      "difficulty": 1
+    }
+  ]
+}
